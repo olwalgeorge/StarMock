@@ -172,16 +172,38 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       deploy_time: ${{ steps.deploy_timing.outputs.deploy_time }}
-      deploy_url: ${{ secrets.RENDER_APP_URL }}
+      deploy_url: ${{ steps.set_env.outputs.app_url }}
+      deploy_target: ${{ steps.set_env.outputs.deploy_target }}
     
     steps:
-    - name: 🎯 Trigger Render Deploy Hook
+    - name: 🎯 Set Deployment Target
+      id: set_env
+      run: |
+        if [ "${{ github.ref_name }}" = "main" ]; then
+          echo "deploy_hook=${{ secrets.RENDER_DEPLOY_HOOK_URL }}" >> $GITHUB_OUTPUT
+          echo "app_url=${{ secrets.RENDER_APP_URL }}" >> $GITHUB_OUTPUT
+          echo "deploy_target=Production" >> $GITHUB_OUTPUT
+          echo "📍 Deploying to: Production (Main Branch)"
+          echo "🌐 Target URL: ${{ secrets.RENDER_APP_URL }}"
+        else
+          echo "deploy_hook=${{ secrets.RENDER_DEPLOY_HOOK_URL_DEV }}" >> $GITHUB_OUTPUT
+          echo "app_url=${{ secrets.RENDER_APP_URL_DEV }}" >> $GITHUB_OUTPUT
+          echo "deploy_target=Development (${{ github.ref_name }})" >> $GITHUB_OUTPUT
+          echo "� Deploying to: Development (${{ github.ref_name }})"
+          echo "🌐 Target URL: ${{ secrets.RENDER_APP_URL_DEV }}"
+        fi
+    
+    - name: 🚀 Trigger Render Deploy Hook
       id: deploy_timing
       run: |
         START_TIME=$(date +%s)
-        echo "🚀 Triggering Render deployment..."
+        DEPLOY_HOOK="${{ steps.set_env.outputs.deploy_hook }}"
+        DEPLOY_TARGET="${{ steps.set_env.outputs.deploy_target }}"
         
-        RESPONSE=$(curl -X POST "${{ secrets.RENDER_DEPLOY_HOOK_URL }}" \
+        echo "🚀 Triggering deployment to: $DEPLOY_TARGET"
+        echo "🔗 Branch: ${{ github.ref_name }}"
+        
+        RESPONSE=$(curl -X POST "$DEPLOY_HOOK" \
           -H "Content-Type: application/json" \
           -w "\n%{http_code}" \
           -s \
@@ -198,7 +220,7 @@ jobs:
         echo "⚡ Deploy hook responded in ${DEPLOY_TIME}s"
         
         if [ "$HTTP_CODE" -eq 200 ] || [ "$HTTP_CODE" -eq 201 ]; then
-          echo "✅ Deployment triggered successfully!"
+          echo "✅ Deployment triggered successfully to $DEPLOY_TARGET!"
           echo "🔄 Render is now building and deploying your application..."
         else
           echo "❌ Deployment hook failed with status $HTTP_CODE"
@@ -233,11 +255,13 @@ jobs:
       run: |
         MAX_RETRIES=12
         RETRY_COUNT=0
-        HEALTH_URL="${{ secrets.RENDER_APP_URL }}/api/health"
+        HEALTH_URL="${{ needs.deploy.outputs.deploy_url }}/api/health"
+        DEPLOY_TARGET="${{ needs.deploy.outputs.deploy_target }}"
         START_TIME=$(date +%s)
         SUCCESS=false
         
         echo "🏥 Checking health endpoint: $HEALTH_URL"
+        echo "📍 Target: $DEPLOY_TARGET"
         echo "🔄 Max retries: $MAX_RETRIES with exponential backoff"
         echo ""
         
@@ -370,26 +394,31 @@ jobs:
         EOF
         
         if [ "$DEPLOY_STATUS" = "success" ]; then
+          DEPLOY_URL="${{ needs.deploy.outputs.deploy_url }}"
+          DEPLOY_TARGET="${{ needs.deploy.outputs.deploy_target }}"
           cat << EOF >> $GITHUB_STEP_SUMMARY
-        **🎯 Live Application:** [${{ secrets.RENDER_APP_URL }}](${{ secrets.RENDER_APP_URL }})  
-        **🏥 Health Endpoint:** [${{ secrets.RENDER_APP_URL }}/api/health](${{ secrets.RENDER_APP_URL }}/api/health)  
+        **📍 Deployment Target:** $DEPLOY_TARGET  
+        **🎯 Live Application:** [$DEPLOY_URL]($DEPLOY_URL)  
+        **🏥 Health Endpoint:** [$DEPLOY_URL/api/health]($DEPLOY_URL/api/health)  
         **📊 Render Dashboard:** [View Logs](https://dashboard.render.com)
         
         EOF
         
           if [ "$HEALTH_STATUS" = "success" ]; then
+            DEPLOY_URL="${{ needs.deploy.outputs.deploy_url }}"
             cat << EOF >> $GITHUB_STEP_SUMMARY
         ### ✅ Application Status: Healthy
         
         Your application is live and responding to requests!
         
         **Quick Links:**
-        - 🌐 [Open Application](${{ secrets.RENDER_APP_URL }})
-        - 🏥 [Check Health](${{ secrets.RENDER_APP_URL }}/api/health)
+        - 🌐 [Open Application]($DEPLOY_URL)
+        - 🏥 [Check Health]($DEPLOY_URL/api/health)
         - 📊 [View Metrics](https://dashboard.render.com)
         
         EOF
           else
+            DEPLOY_URL="${{ needs.deploy.outputs.deploy_url }}"
             cat << EOF >> $GITHUB_STEP_SUMMARY
         ### ⚠️ Health Check Notice
         
@@ -397,7 +426,7 @@ jobs:
         
         **Action Items:**
         1. ✅ Check [Render Dashboard](https://dashboard.render.com) for build status
-        2. ✅ Manually verify: [${{ secrets.RENDER_APP_URL }}](${{ secrets.RENDER_APP_URL }})
+        2. ✅ Manually verify: [$DEPLOY_URL]($DEPLOY_URL)
         3. ✅ Review Render logs for any startup errors
         
         EOF
