@@ -4,7 +4,50 @@ Comprehensive CI/CD, security, and quality assurance workflows for StarMock.
 
 ## 📋 Workflows Overview
 
-### 1. **CI Workflow** (`ci.yml`)
+### 1. **Deploy Workflow** (`deploy.yml`) 🚀 NEW
+**Triggers:** 
+- Push to `main` branch (automatic)
+- Manual dispatch with environment selection
+
+**Purpose:** Automated continuous deployment (CD)
+
+**Jobs:**
+- 🏗️ Build Application
+  - Install dependencies
+  - Run tests
+  - Create production bundle
+  - Generate build metadata
+  - Upload artifacts (30-day retention)
+- 🚀 Deploy to GitHub Pages
+  - Download build artifacts
+  - Configure GitHub Pages
+  - Upload and deploy
+  - Generate deployment URL
+- 🏥 Post-Deployment Health Check
+  - Verify deployment success
+  - Wait for propagation
+- 📢 Deployment Notification
+  - Success/failure summary
+  - Deployment details
+
+**Environment:** `github-pages`
+
+**Features:**
+- Build info JSON with commit SHA, timestamp, actor
+- Concurrency control (cancel in-progress deploys)
+- Full deployment summary
+- Rollback support via workflow re-run
+
+**Badge:**
+```markdown
+![Deploy](https://github.com/olwalgeorge/StarMock/actions/workflows/deploy.yml/badge.svg)
+```
+
+**Live Demo:** https://olwalgeorge.github.io/StarMock/
+
+---
+
+### 2. **CI Workflow** (`ci.yml`)
 **Triggers:** All branches (push & PRs)
 
 **Purpose:** Fast feedback for every code change
@@ -29,7 +72,32 @@ Comprehensive CI/CD, security, and quality assurance workflows for StarMock.
 
 ---
 
-### 2. **Test Workflow** (`test.yml`)
+### 2. **CI Workflow** (`ci.yml`)
+**Triggers:** All branches (push & PRs)
+
+**Purpose:** Fast feedback for every code change
+
+**Jobs:**
+- ✅ Lint & Test
+  - Format checking (Prettier)
+  - ESLint analysis
+  - Unit tests
+  - Security audit (npm audit)
+  - Dependency health check
+- 🔒 Security Scan
+  - CodeQL v4 analysis for JavaScript/TypeScript
+- 🏗️ Build
+  - Production build verification
+  - Artifact upload
+
+**Badge:**
+```markdown
+![CI](https://github.com/olwalgeorge/StarMock/actions/workflows/ci.yml/badge.svg)
+```
+
+---
+
+### 3. **Test Workflow** (`test.yml`)
 **Triggers:** `main` and `develop` branches
 
 **Purpose:** Matrix testing across Node.js versions
@@ -51,7 +119,29 @@ Comprehensive CI/CD, security, and quality assurance workflows for StarMock.
 
 ---
 
-### 3. **Code Coverage** (`coverage.yml`)
+### 3. **Test Workflow** (`test.yml`)
+**Triggers:** `main` and `develop` branches
+
+**Purpose:** Matrix testing across Node.js versions
+
+**Strategy:**
+- Node.js 18.x
+- Node.js 20.x
+
+**Jobs:**
+- Format checking
+- Linting
+- Tests
+- Build
+
+**Badge:**
+```markdown
+![Test](https://github.com/olwalgeorge/StarMock/actions/workflows/test.yml/badge.svg)
+```
+
+---
+
+### 4. **Code Coverage** (`coverage.yml`)
 **Triggers:** `main` branch only
 
 **Purpose:** Track test coverage
@@ -69,7 +159,25 @@ Comprehensive CI/CD, security, and quality assurance workflows for StarMock.
 
 ---
 
-### 4. **PR Quality Checks** (`pr-checks.yml`) 🆕
+### 4. **Code Coverage** (`coverage.yml`)
+**Triggers:** `main` branch only
+
+**Purpose:** Track test coverage
+
+**Features:**
+- Runs full test suite with coverage
+- Installs @vitest/coverage-v8
+- Optional Codecov upload
+- Coverage artifacts
+
+**Badge:**
+```markdown
+![Coverage](https://github.com/olwalgeorge/StarMock/actions/workflows/coverage.yml/badge.svg)
+```
+
+---
+
+### 5. **PR Quality Checks** (`pr-checks.yml`)
 **Triggers:** Pull requests (when opened/updated)
 
 **Purpose:** Enforce PR quality standards
@@ -99,7 +207,37 @@ Comprehensive CI/CD, security, and quality assurance workflows for StarMock.
 
 ---
 
-### 5. **Security Workflow** (`security.yml`) 🆕
+### 5. **PR Quality Checks** (`pr-checks.yml`)
+**Triggers:** Pull requests (when opened/updated)
+
+**Purpose:** Enforce PR quality standards
+
+**Checks:**
+- 📏 PR Size Analysis
+  - Warns if >20 files or >500 lines changed
+  - Auto-comments with recommendations
+- 📝 PR Title Format
+  - Validates Conventional Commits format
+  - Suggests corrections
+- 🚨 Breaking Changes Detection
+- 📌 TODO/FIXME Scanner
+- ✅ Commit Message Validation
+- 🔍 Code Quality Analysis
+  - Linting with error reporting
+  - Format checking
+  - Test coverage
+- 🔐 Dependency Review
+  - Security vulnerability scan
+  - License compliance
+
+**Badge:**
+```markdown
+![PR Checks](https://github.com/olwalgeorge/StarMock/actions/workflows/pr-checks.yml/badge.svg)
+```
+
+---
+
+### 6. **Security Workflow** (`security.yml`)
 **Triggers:** 
 - Push to `main`/`develop`
 - PRs to `main`/`develop`
@@ -130,7 +268,65 @@ Comprehensive CI/CD, security, and quality assurance workflows for StarMock.
 
 ---
 
-### 6. **Quality Gates** (`quality-gates.yml`) 🆕
+### 6. **Security Workflow** (`security.yml`)
+**Triggers:** 
+- Push to `main`/`develop`
+- PRs to `main`/`develop`
+- Weekly schedule (Mondays at 00:00)
+- Manual dispatch
+
+**Purpose:** Comprehensive security analysis
+
+**Jobs:**
+- 🛡️ Vulnerability Scan
+  - npm audit with severity thresholds
+  - Fails on critical/high vulnerabilities
+  - Uploads audit results
+- 🔍 CodeQL Analysis (v4)
+  - Security & quality queries
+  - JavaScript/TypeScript analysis
+- 🔑 Secret Scanning
+  - TruffleHog OSS integration
+  - Detects exposed secrets/keys
+- 📦 Dependency Check
+  - Outdated dependencies
+  - Package integrity verification
+
+**Badge:**
+```markdown
+![Security](https://github.com/olwalgeorge/StarMock/actions/workflows/security.yml/badge.svg)
+```
+
+---
+
+### 7. **Quality Gates** (`quality-gates.yml`)
+**Triggers:** PRs and pushes to `main`/`develop`
+
+**Purpose:** Enforce code quality standards
+
+**Jobs:**
+- 📊 Code Coverage Analysis
+  - Test coverage with thresholds
+  - Coverage reports
+  - PR comments with metrics
+- 📐 Quality Metrics
+  - ESLint with error reporting
+  - Code formatting verification
+  - Complexity analysis
+  - File size monitoring
+- ⚡ Performance Check
+  - Build time measurement
+  - Bundle size analysis
+  - Largest file identification
+
+**Badge:**
+```markdown
+![Quality Gates](https://github.com/olwalgeorge/StarMock/actions/workflows/quality-gates.yml/badge.svg)
+```
+
+---
+
+### 7. **Quality Gates** (`quality-gates.yml`)
 **Triggers:** PRs and pushes to `main`/`develop`
 
 **Purpose:** Enforce code quality standards
@@ -181,6 +377,7 @@ Comprehensive CI/CD, security, and quality assurance workflows for StarMock.
 
 | Workflow | All Branches | main/develop | main Only |
 |----------|:------------:|:------------:|:---------:|
+| Deploy | ❌ | ❌ | ✅ |
 | CI | ✅ | ✅ | ✅ |
 | Test | ❌ | ✅ | ✅ |
 | Coverage | ❌ | ❌ | ✅ |
@@ -189,6 +386,10 @@ Comprehensive CI/CD, security, and quality assurance workflows for StarMock.
 | Quality Gates | ❌ | ✅ | ✅ |
 
 ### Why This Strategy?
+
+**Main Branch Only:**
+- **Deploy**: Production deployments only from stable main branch
+- **Coverage**: Baseline coverage tracking
 
 **Feature Branches (`olwal-qa`, etc.):**
 - CI runs on every push (fast feedback)
