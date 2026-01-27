@@ -30,6 +30,11 @@ jobs:
         cd app
         npm ci
     
+    - name: Check code formatting
+      run: |
+        cd app
+        npm run format:check
+    
     - name: Run linter
       run: |
         cd app

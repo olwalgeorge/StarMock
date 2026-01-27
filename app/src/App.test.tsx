@@ -22,7 +22,7 @@ describe('App Component', () => {
     render(<App />)
     const viteLogo = screen.getByAltText('Vite logo')
     const reactLogo = screen.getByAltText('React logo')
-    
+
     expect(viteLogo).toBeInTheDocument()
     expect(reactLogo).toBeInTheDocument()
   })
@@ -36,32 +36,36 @@ describe('App Component', () => {
   it('increments count when button is clicked', async () => {
     const user = userEvent.setup()
     render(<App />)
-    
+
     const button = screen.getByRole('button', { name: /count is 0/i })
     await user.click(button)
-    
-    expect(screen.getByRole('button', { name: /count is 1/i })).toBeInTheDocument()
+
+    expect(
+      screen.getByRole('button', { name: /count is 1/i })
+    ).toBeInTheDocument()
   })
 
   it('increments count multiple times', async () => {
     const user = userEvent.setup()
     render(<App />)
-    
+
     const button = screen.getByRole('button', { name: /count is/i })
-    
+
     await user.click(button)
     await user.click(button)
     await user.click(button)
-    
-    expect(screen.getByRole('button', { name: /count is 3/i })).toBeInTheDocument()
+
+    expect(
+      screen.getByRole('button', { name: /count is 3/i })
+    ).toBeInTheDocument()
   })
 
   it('contains links to Vite and React documentation', () => {
     render(<App />)
-    
+
     const viteLink = screen.getByRole('link', { name: /vite logo/i })
     const reactLink = screen.getByRole('link', { name: /react logo/i })
-    
+
     expect(viteLink).toHaveAttribute('href', 'https://vite.dev')
     expect(reactLink).toHaveAttribute('href', 'https://react.dev')
   })
@@ -75,6 +79,8 @@ describe('App Component', () => {
 
   it('displays the documentation hint', () => {
     render(<App />)
-    expect(screen.getByText(/Click on the Vite and React logos to learn more/i)).toBeInTheDocument()
+    expect(
+      screen.getByText(/Click on the Vite and React logos to learn more/i)
+    ).toBeInTheDocument()
   })
 })

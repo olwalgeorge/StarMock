@@ -26,6 +26,10 @@ jobs:
       working-directory: ./app
       run: npm ci
     
+    - name: Check code formatting
+      working-directory: ./app
+      run: npm run format:check
+    
     - name: Run ESLint
       working-directory: ./app
       run: npm run lint
