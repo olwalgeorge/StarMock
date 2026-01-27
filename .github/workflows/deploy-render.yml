@@ -186,11 +186,14 @@ jobs:
           echo "📍 Deploying to: Production (Main Branch)"
           echo "🌐 Target URL: ${{ secrets.RENDER_APP_URL }}"
         else
+          APP_URL="${{ secrets.RENDER_APP_URL_DEV }}"
+          echo "🔍 DEBUG - Raw URL length: ${#APP_URL}"
+          echo "🔍 DEBUG - URL value: [$APP_URL]"
           echo "deploy_hook=${{ secrets.RENDER_DEPLOY_HOOK_URL_DEV }}" >> $GITHUB_OUTPUT
-          echo "app_url=${{ secrets.RENDER_APP_URL_DEV }}" >> $GITHUB_OUTPUT
+          echo "app_url=$APP_URL" >> $GITHUB_OUTPUT
           echo "deploy_target=Development (${{ github.ref_name }})" >> $GITHUB_OUTPUT
-          echo "� Deploying to: Development (${{ github.ref_name }})"
-          echo "🌐 Target URL: ${{ secrets.RENDER_APP_URL_DEV }}"
+          echo "📍 Deploying to: Development (${{ github.ref_name }})"
+          echo "🌐 Target URL: $APP_URL"
         fi
     
     - name: 🚀 Trigger Render Deploy Hook
