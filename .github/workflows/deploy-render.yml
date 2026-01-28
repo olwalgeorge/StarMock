@@ -180,11 +180,19 @@ jobs:
       id: set_env
       run: |
         if [ "${{ github.ref_name }}" = "main" ]; then
-          echo "deploy_hook=${{ secrets.RENDER_DEPLOY_HOOK_URL }}" >> $GITHUB_OUTPUT
-          echo "app_url=${{ secrets.RENDER_APP_URL }}" >> $GITHUB_OUTPUT
+          DEPLOY_HOOK_URL="${{ secrets.RENDER_DEPLOY_HOOK_URL }}"
+          APP_URL="${{ secrets.RENDER_APP_URL }}"
+          
+          echo "🔍 DEBUG - Production deploy hook length: ${#DEPLOY_HOOK_URL}"
+          echo "🔍 DEBUG - Production app URL length: ${#APP_URL}"
+          echo "🔍 DEBUG - Deploy hook value: [$DEPLOY_HOOK_URL]"
+          echo "🔍 DEBUG - App URL value: [$APP_URL]"
+          
+          echo "deploy_hook=$DEPLOY_HOOK_URL" >> $GITHUB_OUTPUT
+          echo "app_url=$APP_URL" >> $GITHUB_OUTPUT
           echo "deploy_target=Production" >> $GITHUB_OUTPUT
           echo "📍 Deploying to: Production (Main Branch)"
-          echo "🌐 Target URL: ${{ secrets.RENDER_APP_URL }}"
+          echo "🌐 Target URL: $APP_URL"
         else
           APP_URL="${{ secrets.RENDER_APP_URL_DEV }}"
           echo "🔍 DEBUG - Raw URL length: ${#APP_URL}"
@@ -202,6 +210,23 @@ jobs:
         START_TIME=$(date +%s)
         DEPLOY_HOOK="${{ steps.set_env.outputs.deploy_hook }}"
         DEPLOY_TARGET="${{ steps.set_env.outputs.deploy_target }}"
+        
+        echo "🔍 DEBUG - Final deploy hook: [$DEPLOY_HOOK]"
+        echo "🔍 DEBUG - Deploy hook length: ${#DEPLOY_HOOK}"
+        
+        # Validate deploy hook is not empty
+        if [ -z "$DEPLOY_HOOK" ]; then
+          echo "❌ ERROR: Deploy hook URL is empty!"
+          echo "🔍 Check that the secret RENDER_DEPLOY_HOOK_URL (production) or RENDER_DEPLOY_HOOK_URL_DEV is configured"
+          exit 1
+        fi
+        
+        # Validate deploy hook starts with https://
+        if [[ ! "$DEPLOY_HOOK" =~ ^https:// ]]; then
+          echo "❌ ERROR: Deploy hook URL is malformed: [$DEPLOY_HOOK]"
+          echo "🔍 URL should start with 'https://'"
+          exit 1
+        fi
         
         echo "🚀 Triggering deployment to: $DEPLOY_TARGET"
         echo "🔗 Branch: ${{ github.ref_name }}"
