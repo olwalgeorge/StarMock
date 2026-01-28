@@ -180,33 +180,39 @@ jobs:
       id: set_env
       run: |
         if [ "${{ github.ref_name }}" = "main" ]; then
-          # Strip whitespace from secrets
-          DEPLOY_HOOK_URL=$(echo "${{ secrets.RENDER_DEPLOY_HOOK_URL }}" | tr -d '[:space:]')
-          APP_URL=$(echo "${{ secrets.RENDER_APP_URL }}" | tr -d '[:space:]')
+          # Strip only leading/trailing whitespace from secrets
+          DEPLOY_HOOK_URL=$(echo "${{ secrets.RENDER_DEPLOY_HOOK_URL }}" | xargs)
+          APP_URL=$(echo "${{ secrets.RENDER_APP_URL }}" | xargs)
           
           echo "🔍 DEBUG - Production deploy hook length: ${#DEPLOY_HOOK_URL}"
           echo "🔍 DEBUG - Production app URL length: ${#APP_URL}"
           echo "🔍 DEBUG - Deploy hook value: [$DEPLOY_HOOK_URL]"
           echo "🔍 DEBUG - App URL value: [$APP_URL]"
           
-          echo "deploy_hook=$DEPLOY_HOOK_URL" >> $GITHUB_OUTPUT
-          echo "app_url=$APP_URL" >> $GITHUB_OUTPUT
-          echo "deploy_target=Production" >> $GITHUB_OUTPUT
+          {
+            echo "deploy_hook=$DEPLOY_HOOK_URL"
+            echo "app_url=$APP_URL"
+            echo "deploy_target=Production"
+          } >> $GITHUB_OUTPUT
+          
           echo "📍 Deploying to: Production (Main Branch)"
           echo "🌐 Target URL: $APP_URL"
         else
-          # Strip whitespace from secrets
-          DEPLOY_HOOK_URL=$(echo "${{ secrets.RENDER_DEPLOY_HOOK_URL_DEV }}" | tr -d '[:space:]')
-          APP_URL=$(echo "${{ secrets.RENDER_APP_URL_DEV }}" | tr -d '[:space:]')
+          # Strip only leading/trailing whitespace from secrets
+          DEPLOY_HOOK_URL=$(echo "${{ secrets.RENDER_DEPLOY_HOOK_URL_DEV }}" | xargs)
+          APP_URL=$(echo "${{ secrets.RENDER_APP_URL_DEV }}" | xargs)
           
           echo "🔍 DEBUG - Dev deploy hook length: ${#DEPLOY_HOOK_URL}"
           echo "🔍 DEBUG - Dev app URL length: ${#APP_URL}"
           echo "🔍 DEBUG - Deploy hook value: [$DEPLOY_HOOK_URL]"
           echo "🔍 DEBUG - App URL value: [$APP_URL]"
           
-          echo "deploy_hook=$DEPLOY_HOOK_URL" >> $GITHUB_OUTPUT
-          echo "app_url=$APP_URL" >> $GITHUB_OUTPUT
-          echo "deploy_target=Development (${{ github.ref_name }})" >> $GITHUB_OUTPUT
+          {
+            echo "deploy_hook=$DEPLOY_HOOK_URL"
+            echo "app_url=$APP_URL"
+            echo "deploy_target=Development (${{ github.ref_name }})"
+          } >> $GITHUB_OUTPUT
+          
           echo "📍 Deploying to: Development (${{ github.ref_name }})"
           echo "🌐 Target URL: $APP_URL"
         fi
