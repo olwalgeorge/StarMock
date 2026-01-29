@@ -404,7 +404,19 @@ jobs:
       id: health
       run: |
         # Get the correct URL based on branch (same logic as deploy job)
-        if [ "${{ github.ref_name }}" = "main" ]; then
+        # Determine if this run should be treated as a Production deploy.
+        # We allow two canonical flows that can trigger a production deploy:
+        #  1) A push to the main branch in the canonical repository.
+        #  2) A merged pull request (closed with merged=true) targeting main in the canonical repository.
+        IS_PROD=false
+        
+        if [ "${{ github.event_name }}" = "pull_request" ]; then
+          if [ "${{ github.event.pull_request.merged }}" = "true" ] && [ "${{ github.event.pull_request.base.ref }}" = "main" ] && [ "${{ github.repository }}" = "olwalgeorge/StarMock" ]; then
+            IS_PROD=true
+          fi
+        fi
+        
+        if [ "$IS_PROD" = "true" ] || ( [ "${{ github.ref_name }}" = "main" ] && [ "${{ github.repository }}" = "olwalgeorge/StarMock" ] ); then
           APP_URL=$(echo "${{ secrets.RENDER_APP_URL }}" | xargs)
           DEPLOY_TARGET="Production"
         else
