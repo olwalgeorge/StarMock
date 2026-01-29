@@ -36,3 +36,4 @@ export default App
 // Test comments for pre-commit hook
 // Another test comment
 // Final test comment
+// Test final hook
