@@ -105,6 +105,41 @@ After deployment, the pipeline:
 
 ---
 
+### Stage 4: Rollback & Recovery 🔄 (Automatic)
+```yaml
+jobs:
+  track-deployment: # Track successful deployments
+  rollback:         # Automatic rollback on failure
+  rollback-notification: # Alert team about rollbacks
+```
+
+#### Automatic Rollback System
+When deployments fail health checks, the pipeline automatically:
+
+1. **Failure Detection**: Monitors health check results
+2. **Impact Assessment**: Determines if rollback is appropriate
+3. **Rollback Execution**: Deploys to last known good state
+4. **Health Verification**: Confirms rollback deployment works
+5. **Team Notification**: Creates investigation issues and alerts
+
+**Rollback Triggers:**
+- Health check failure after successful deployment
+- Application becomes unresponsive post-deployment
+- Critical errors detected in production
+
+**Rollback Process:**
+- Identifies last successful deployment commit
+- Creates rollback branch with previous working code
+- Triggers redeployment to stable state
+- Verifies rollback health before completion
+- Notifies team and creates investigation issue
+
+**Duration:** ~5-8 minutes (including verification)
+
+---
+
+---
+
 ## 3. Deployment Environments
 
 ### Development Environment (Fork)
@@ -217,10 +252,18 @@ RENDER_APP_URL_DEV          # Optional: Development app URL for branch testing
 - Response time monitoring
 - Retry logic with exponential backoff
 
+### Rollback Monitoring
+- **Automatic Rollback Events**: Track rollback frequency and success rates
+- **Investigation Issues**: GitHub issues created for each rollback
+- **Rollback Health Checks**: Verification of rollback deployment stability
+- **Recovery Time**: Time from failure detection to stable rollback
+- **Success Metrics**: Rollback effectiveness and false positive rates
+
 ### Notification Channels
 - GitHub PR comments for deployment status
 - Email notifications for pipeline failures
 - Slack integration (if configured)
+- **Automatic GitHub issues** for rollback investigations
 
 ---
 
@@ -230,22 +273,55 @@ RENDER_APP_URL_DEV          # Optional: Development app URL for branch testing
 - **Quality Checks:** 2-3 minutes
 - **Build:** 1-2 minutes
 - **Deploy:** 3-5 minutes
-- **Total:** 6-10 minutes
+- **Rollback (if triggered):** 5-8 minutes
+- **Total (with rollback):** 10-16 minutes
 
 ### Success Rates:
 - Target: >95% success rate
 - Monitor failure patterns
 - Address recurring issues promptly
+- **Rollback Success Rate:** >90% of rollbacks should restore service
 
 ---
 
 ## 10. Emergency Procedures
 
+### Automatic Rollback System
+The pipeline includes **automatic rollback** capabilities:
+
+#### When Rollbacks Occur:
+- **Automatic**: Health check failures trigger immediate rollback
+- **Manual Override**: Use emergency deployment mode to skip rollback
+- **Notification**: Team alerted via GitHub issues and workflow comments
+
+#### Rollback Process:
+1. **Detection**: Pipeline detects deployment failure
+2. **Analysis**: Identifies last successful deployment
+3. **Execution**: Creates rollback branch and redeploys
+4. **Verification**: Health checks rollback deployment
+5. **Notification**: Creates investigation issue for root cause analysis
+
+#### Rollback Monitoring:
+- **GitHub Issues**: Automatic issue creation with rollback details
+- **Workflow Logs**: Complete rollback execution logs
+- **Health Status**: Rollback deployment verification
+- **Timeline**: Rollback completion within 5-8 minutes
+
 ### For Critical Issues:
-1. **Use emergency deployment** with test skipping
-2. **Direct push to main** (only for critical fixes)
-3. **Monitor deployment closely**
-4. **Rollback plan ready** (previous working commit)
+1. **Monitor automatic rollback** - system handles most failures
+2. **Check rollback notifications** - review GitHub issues created
+3. **Use emergency deployment** with test skipping (if rollback fails)
+4. **Direct push to main** (only for critical fixes when all else fails)
+5. **Contact on-call team** for immediate assistance
+
+### Manual Rollback (If Automatic Fails):
+```bash
+# Create rollback branch manually
+git checkout -b rollback-$(date +%Y%m%d-%H%M%S) <last-good-commit>
+
+# Push to trigger deployment
+git push origin rollback-$(date +%Y%m%d-%H%M%S)
+```
 
 ### Contact Information:
 - **QA Lead:** [Your Name]

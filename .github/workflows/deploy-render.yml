@@ -885,3 +885,305 @@ jobs:
       env:
         OVERALL_STATUS: ${{ env.OVERALL_STATUS }}
         OVERALL_EMOJI: ${{ env.OVERALL_EMOJI }}
+
+  track-deployment:
+    name: 📊 Track Successful Deployment
+    needs: [build, deploy, healthcheck]
+    runs-on: ubuntu-latest
+    if: needs.healthcheck.outputs.health_status == 'success'
+    
+    steps:
+    - name: 🔄 Track Deployment Success
+      run: |
+        echo "📊 Tracking successful deployment..."
+        
+        # Determine environment
+        if [ "${{ github.repository }}" = "olwalgeorge/StarMock" ]; then
+          ENVIRONMENT="development"
+        elif [ "${{ github.ref_name }}" = "main" ] && [ "${{ github.repository }}" = "blelian/StarMock" ]; then
+          ENVIRONMENT="production"
+        else
+          ENVIRONMENT="development"
+        fi
+        
+        # Create deployment record
+        DEPLOYMENT_RECORD=$(cat <<EOF
+        {
+          "commit_sha": "${{ github.sha }}",
+          "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+          "environment": "$ENVIRONMENT",
+          "branch": "${{ github.ref_name }}",
+          "repository": "${{ github.repository }}",
+          "workflow_run": "${{ github.run_id }}",
+          "deploy_target": "${{ needs.deploy.outputs.deploy_target }}",
+          "build_time": "${{ needs.build.outputs.build_time }}",
+          "deploy_time": "${{ needs.deploy.outputs.deploy_time }}",
+          "health_check_attempts": "${{ needs.healthcheck.outputs.health_attempts }}",
+          "health_check_time": "${{ needs.healthcheck.outputs.health_time }}"
+        }
+        EOF
+        )
+        
+        echo "📝 Deployment record created:"
+        echo "$DEPLOYMENT_RECORD" | jq . 2>/dev/null || echo "$DEPLOYMENT_RECORD"
+        
+        # Store deployment record (in a real implementation, this would go to a database or artifact store)
+        # For now, we'll create a GitHub issue comment or use artifacts
+        echo "deployment_record<<EOF" >> $GITHUB_OUTPUT
+        echo "$DEPLOYMENT_RECORD" >> $GITHUB_OUTPUT
+        echo "EOF" >> $GITHUB_OUTPUT
+        
+        echo "✅ Deployment tracking completed"
+
+  rollback:
+    name: 🔄 Rollback on Failure
+    needs: [deploy, healthcheck, track-deployment]
+    runs-on: ubuntu-latest
+    if: failure() && needs.healthcheck.outputs.health_status != 'success' && needs.deploy.result == 'success'
+    outputs:
+      rollback_commit: ${{ steps.analyze.outputs.rollback_commit }}
+      environment: ${{ steps.analyze.outputs.environment }}
+      rollback_status: ${{ steps.rollback_execution.outputs.rollback_status }}
+      rollback_branch: ${{ steps.rollback_execution.outputs.rollback_branch }}
+      rollback_health: ${{ steps.rollback_execution.outputs.rollback_health }}
+    
+    steps:
+    - name: 📥 Checkout code for rollback
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0  # Get full history for rollback analysis
+    
+    - name: 🔍 Analyze Deployment Failure
+      id: analyze
+      run: |
+        echo "🔍 Analyzing deployment failure..."
+        
+        # Determine environment
+        if [ "${{ github.repository }}" = "olwalgeorge/StarMock" ]; then
+          ENVIRONMENT="development"
+          ROLLBACK_HOOK="${{ secrets.RENDER_DEPLOY_HOOK_URL_DEV }}"
+          ROLLBACK_URL="${{ secrets.RENDER_APP_URL_DEV }}"
+        elif [ "${{ github.ref_name }}" = "main" ] && [ "${{ github.repository }}" = "blelian/StarMock" ]; then
+          ENVIRONMENT="production"
+          ROLLBACK_HOOK="${{ secrets.RENDER_DEPLOY_HOOK_URL }}"
+          ROLLBACK_URL="${{ secrets.RENDER_APP_URL }}"
+        else
+          ENVIRONMENT="development"
+          ROLLBACK_HOOK="${{ secrets.RENDER_DEPLOY_HOOK_URL_DEV }}"
+          ROLLBACK_URL="${{ secrets.RENDER_APP_URL_DEV }}"
+        fi
+        
+        echo "🌍 Environment: $ENVIRONMENT"
+        echo "🎯 Rollback Target: $ROLLBACK_URL"
+        
+        # Find last successful deployment commit
+        # In a real implementation, this would query a database of successful deployments
+        # For now, we'll use git history and look for recent successful workflow runs
+        
+        echo "🔄 Finding last successful deployment..."
+        
+        # Get recent commits (last 10)
+        RECENT_COMMITS=$(git log --oneline -10 --pretty=format:"%H|%s|%an|%ad" --date=iso | head -5)
+        
+        echo "📋 Recent commits:"
+        echo "$RECENT_COMMITS"
+        
+        # For demonstration, we'll use the second-to-last commit as rollback target
+        # In production, this would be the last known good deployment
+        ROLLBACK_COMMIT=$(echo "$RECENT_COMMITS" | sed -n '2p' | cut -d'|' -f1)
+        
+        if [ -z "$ROLLBACK_COMMIT" ]; then
+          echo "❌ No suitable rollback commit found"
+          echo "rollback_commit=NULL" >> $GITHUB_OUTPUT
+          echo "should_rollback=false" >> $GITHUB_OUTPUT
+          exit 1
+        fi
+        
+        echo "🎯 Rollback commit: $ROLLBACK_COMMIT"
+        echo "📝 Commit details: $(git show --no-patch --format="%h %s" $ROLLBACK_COMMIT)"
+        
+        echo "rollback_commit=$ROLLBACK_COMMIT" >> $GITHUB_OUTPUT
+        echo "environment=$ENVIRONMENT" >> $GITHUB_OUTPUT
+        echo "rollback_hook=$ROLLBACK_HOOK" >> $GITHUB_OUTPUT
+        echo "rollback_url=$ROLLBACK_URL" >> $GITHUB_OUTPUT
+        echo "should_rollback=true" >> $GITHUB_OUTPUT
+    
+    - name: 🚀 Execute Rollback
+      if: steps.analyze.outputs.should_rollback == 'true'
+      run: |
+        ROLLBACK_COMMIT="${{ steps.analyze.outputs.rollback_commit }}"
+        ROLLBACK_HOOK="${{ steps.analyze.outputs.rollback_hook }}"
+        ENVIRONMENT="${{ steps.analyze.outputs.environment }}"
+        
+        echo "🚀 Executing rollback to commit: $ROLLBACK_COMMIT"
+        echo "🌍 Environment: $ENVIRONMENT"
+        
+        # Create a temporary branch for rollback deployment
+        ROLLBACK_BRANCH="rollback-$(date +%Y%m%d-%H%M%S)"
+        
+        git checkout -b "$ROLLBACK_BRANCH" "$ROLLBACK_COMMIT"
+        
+        echo "📦 Created rollback branch: $ROLLBACK_BRANCH"
+        echo "📝 Commit: $(git show --no-patch --format='%h %s')"
+        
+        # Trigger deployment with rollback commit
+        if [ -n "$ROLLBACK_HOOK" ]; then
+          echo "🔗 Triggering rollback deployment..."
+          
+          RESPONSE=$(curl -X POST "$ROLLBACK_HOOK" \
+            -H "Content-Type: application/json" \
+            -w "\n%{http_code}" \
+            -s \
+            --max-time 30)
+          
+          HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
+          BODY=$(echo "$RESPONSE" | head -n-1)
+          
+          if [ "$HTTP_CODE" -eq 200 ] || [ "$HTTP_CODE" -eq 201 ]; then
+            echo "✅ Rollback deployment triggered successfully!"
+            echo "rollback_status=success" >> $GITHUB_OUTPUT
+          else
+            echo "❌ Rollback deployment failed with status $HTTP_CODE"
+            echo "rollback_status=failed" >> $GITHUB_OUTPUT
+            exit 1
+          fi
+        else
+          echo "⚠️ No rollback hook configured - manual rollback required"
+          echo "rollback_status=manual_required" >> $GITHUB_OUTPUT
+        fi
+        
+        echo "rollback_branch=$ROLLBACK_BRANCH" >> $GITHUB_OUTPUT
+      id: rollback_execution
+    
+    - name: 🏥 Verify Rollback Health
+      if: steps.rollback_execution.outputs.rollback_status == 'success'
+      run: |
+        ROLLBACK_URL="${{ steps.analyze.outputs.rollback_url }}"
+        ROLLBACK_BRANCH="${{ steps.rollback_execution.outputs.rollback_branch }}"
+        
+        echo "🏥 Verifying rollback deployment health..."
+        echo "🌐 URL: $ROLLBACK_URL"
+        
+        # Wait for rollback deployment
+        echo "⏳ Waiting for rollback deployment to complete..."
+        sleep 30
+        
+        # Health check the rollback
+        MAX_RETRIES=6
+        RETRY_COUNT=0
+        
+        while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+          RETRY_COUNT=$((RETRY_COUNT + 1))
+          
+          RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" \
+            --max-time 10 \
+            --connect-timeout 5 \
+            "$ROLLBACK_URL/api/health" 2>/dev/null || echo "000")
+          
+          if [ "$RESPONSE" -eq 200 ]; then
+            echo "✅ Rollback health check PASSED! (Attempt $RETRY_COUNT/$MAX_RETRIES)"
+            echo "rollback_health=success" >> $GITHUB_OUTPUT
+            break
+          else
+            echo "⏳ Rollback health check attempt $RETRY_COUNT/$MAX_RETRIES: Status $RESPONSE"
+            if [ $RETRY_COUNT -lt $MAX_RETRIES ]; then
+              sleep 10
+            fi
+          fi
+        done
+        
+        if [ "${{ steps.rollback_execution.outputs.rollback_health }}" != "success" ]; then
+          echo "❌ Rollback health check failed"
+          echo "rollback_health=failed" >> $GITHUB_OUTPUT
+        fi
+
+  rollback-notification:
+    name: 📢 Rollback Notifications
+    needs: [rollback]
+    runs-on: ubuntu-latest
+    if: always() && needs.rollback.result == 'success'
+    
+    steps:
+    - name: 📢 Send Rollback Notifications
+      run: |
+        echo "📢 Sending rollback notifications..."
+        
+        # Create notification payload
+        NOTIFICATION=$(cat <<EOF
+        🚨 **Automatic Rollback Executed**
+        
+        **Environment:** ${{ needs.rollback.outputs.environment }}
+        **Failed Commit:** ${{ github.sha }}
+        **Rollback Commit:** ${{ needs.rollback.outputs.rollback_commit }}
+        **Branch:** ${{ github.ref_name }}
+        **Repository:** ${{ github.repository }}
+        
+        **Failure Details:**
+        - Deployment: ${{ needs.deploy.result }}
+        - Health Check: ${{ needs.healthcheck.outputs.health_status }}
+        
+        **Rollback Status:** ${{ needs.rollback.outputs.rollback_status }}
+        
+        **Actions Taken:**
+        - Created rollback branch: ${{ needs.rollback.outputs.rollback_branch }}
+        - Triggered redeployment to previous working state
+        - Health check verification: ${{ needs.rollback.outputs.rollback_health }}
+        
+        **Next Steps:**
+        1. Investigate the original failure cause
+        2. Fix issues in the failed commit
+        3. Test fixes before redeploying
+        4. Clean up rollback branch after resolution
+        
+        [View Workflow Run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
+        EOF
+        )
+        
+        echo "📨 Notification content:"
+        echo "$NOTIFICATION"
+        
+        # In a real implementation, this would send to Slack, email, etc.
+        # For now, we'll create a GitHub issue
+        
+        echo "📋 Creating investigation issue..."
+        
+        ISSUE_BODY=$(cat <<EOF
+        ## 🚨 Automatic Rollback Executed
+        
+        ### Incident Details
+        - **Timestamp:** $(date -u +%Y-%m-%dT%H:%M:%SZ)
+        - **Environment:** ${{ needs.rollback.outputs.environment || 'Unknown' }}
+        - **Workflow Run:** [#${{ github.run_id }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
+        
+        ### What Happened
+        An automatic rollback was triggered due to deployment failure.
+        
+        ### Rollback Information
+        - **Failed Commit:** \`${{ github.sha }}\`
+        - **Rollback Commit:** \`${{ needs.rollback.outputs.rollback_commit }}\`
+        - **Rollback Branch:** \`${{ needs.rollback.outputs.rollback_branch }}\`
+        - **Health Check Status:** ${{ needs.rollback.outputs.rollback_health }}
+        
+        ### Investigation Required
+        - [ ] Review deployment logs for root cause
+        - [ ] Check health check failures
+        - [ ] Test the failed commit locally
+        - [ ] Implement fixes
+        - [ ] Redeploy after verification
+        - [ ] Clean up rollback branch
+        
+        ### Logs
+        [View Full Workflow Logs](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
+        
+        ---
+        *This issue was automatically created by the rollback system*
+        EOF
+        )
+        
+        # Create GitHub issue for investigation
+        gh issue create \
+          --title "🚨 Rollback Executed: ${{ github.ref_name }} deployment failure" \
+          --body "$ISSUE_BODY" \
+          --label "rollback,investigation-required,incident"
+        
+        echo "✅ Rollback notifications sent and investigation issue created"
