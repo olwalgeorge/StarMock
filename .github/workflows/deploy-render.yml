@@ -438,13 +438,12 @@ jobs:
         
         # Validate health URL is not empty
         if [ -z "$APP_URL" ]; then
-          echo "⚠️ WARNING: App URL is empty — skipping health checks"
-          echo "🔍 This may indicate that RENDER_APP_URL_DEV secret is not set in the fork repository"
-          echo "🔍 For branch deployments, dev secrets must be configured in the fork repository"
-          echo "health_status=skipped" >> $GITHUB_OUTPUT
+          echo "❌ ERROR: App URL is empty!"
+          echo "🔍 Check that RENDER_APP_URL or RENDER_APP_URL_DEV secret is configured"
+          echo "health_status=failed" >> $GITHUB_OUTPUT
           echo "health_time=0s" >> $GITHUB_OUTPUT
           echo "health_attempts=0" >> $GITHUB_OUTPUT
-          exit 0
+          exit 1
         fi
         
         echo "🏥 Checking health endpoint: $HEALTH_URL"
