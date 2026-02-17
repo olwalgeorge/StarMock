@@ -482,6 +482,146 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   }
 
+  /* ── Streaming feedback via SSE (REQ-04) ────────────────────────── */
+  const loadFeedbackWithStreaming = (sessionId) =>
+    new Promise((resolve) => {
+      if (typeof EventSource === 'undefined') {
+        return resolve({ ok: false, message: 'SSE not supported' })
+      }
+
+      const feedbackItems = []
+      let summary = null
+      let settled = false
+
+      const finish = (result) => {
+        if (settled) return
+        settled = true
+        source.close()
+        resolve(result)
+      }
+
+      const source = new EventSource(
+        `/api/sessions/${sessionId}/feedback-stream`
+      )
+
+      source.addEventListener('question', (e) => {
+        try {
+          const data = JSON.parse(e.data)
+          const label = data.questionText
+            ? escapeHtml(data.questionText).slice(0, 80)
+            : `Question ${data.index + 1}`
+          messageEl.textContent = `Evaluating ${label}… (${data.index + 1}/${data.total})`
+          setProgress(
+            `Streaming feedback — question ${data.index + 1} of ${data.total}`
+          )
+        } catch {
+          /* ignore parse errors */
+        }
+      })
+
+      source.addEventListener('chunk', (e) => {
+        try {
+          const data = JSON.parse(e.data)
+          // Update progress with live token count
+          if (data.questionIndex !== undefined) {
+            setProgress(
+              `Receiving AI analysis for question ${data.questionIndex + 1}…`
+            )
+          }
+        } catch {
+          /* ignore */
+        }
+      })
+
+      source.addEventListener('evaluation', (e) => {
+        try {
+          const data = JSON.parse(e.data)
+          feedbackItems.push(data)
+
+          // Progressive rendering — update scores & per-question cards as they arrive
+          const aggregateScores = {
+            situation: average(
+              feedbackItems.map((item) => item?.scores?.situation)
+            ),
+            task: average(feedbackItems.map((item) => item?.scores?.task)),
+            action: average(feedbackItems.map((item) => item?.scores?.action)),
+            result: average(feedbackItems.map((item) => item?.scores?.result)),
+            overall: average(
+              feedbackItems.map((item) => item?.scores?.overall)
+            ),
+          }
+
+          const overall = toPercent(aggregateScores.overall) ?? 0
+          overallScoreValueEl.textContent = `${overall}%`
+          overallScoreRingEl.setAttribute(
+            'stroke-dashoffset',
+            String(DASH_ARRAY - (DASH_ARRAY * overall) / 100)
+          )
+
+          renderBreakdown(aggregateScores)
+          renderPerQuestionFeedback(feedbackItems)
+          renderSuggestions(feedbackItems)
+          renderStrengths(feedbackItems)
+          renderProviderBadge(feedbackItems)
+          renderRoleFitSummary(feedbackItems)
+        } catch {
+          /* ignore */
+        }
+      })
+
+      source.addEventListener('complete', (e) => {
+        try {
+          const data = JSON.parse(e.data)
+          summary = data.summary || null
+
+          // Final render pass with authoritative summary data
+          if (summary?.starScores) {
+            const overall = toPercent(summary.starScores.overall) ?? 0
+            overallScoreValueEl.textContent = `${overall}%`
+            overallScoreRingEl.setAttribute(
+              'stroke-dashoffset',
+              String(DASH_ARRAY - (DASH_ARRAY * overall) / 100)
+            )
+            renderBreakdown(summary.starScores)
+          }
+
+          renderAirMetrics(summary)
+          renderQuestionMetrics(summary)
+          renderSuggestions(feedbackItems)
+          renderStrengths(feedbackItems)
+          renderProviderBadge(feedbackItems)
+          renderRoleFitSummary(feedbackItems)
+          renderPerQuestionFeedback(feedbackItems)
+        } catch {
+          /* ignore */
+        }
+
+        finish({ ok: true, feedbackItems, summary })
+      })
+
+      source.addEventListener('error', (e) => {
+        // SSE "error" event from our endpoint — structured JSON
+        if (e.data) {
+          try {
+            const data = JSON.parse(e.data)
+            return finish({
+              ok: false,
+              message: data.message || 'Streaming error',
+            })
+          } catch {
+            /* fall through */
+          }
+        }
+        // Native EventSource network error — fall back to polling
+        finish({ ok: false, message: 'Stream connection lost' })
+      })
+
+      // Safety timeout — if nothing completes in 3 minutes, fall back
+      setTimeout(() => {
+        finish({ ok: false, message: 'Stream timed out' })
+      }, 180000)
+    })
+
   const loadFeedbackWithPolling = async (sessionId) => {
     const startedAt = Date.now()
     let pollAttempt = 0
@@ -584,7 +724,15 @@ document.addEventListener('DOMContentLoaded', async () => {
         return
       }
 
-      const feedbackLoadResult = await loadFeedbackWithPolling(sessionId)
+      // Try SSE streaming first (REQ-04), fall back to polling
+      let feedbackLoadResult = await loadFeedbackWithStreaming(sessionId)
+      if (!feedbackLoadResult.ok) {
+        console.info(
+          '[feedback] Streaming unavailable, falling back to polling:',
+          feedbackLoadResult.message
+        )
+        feedbackLoadResult = await loadFeedbackWithPolling(sessionId)
+      }
       if (!feedbackLoadResult.ok) {
         setProgress('', false)
         messageEl.textContent = feedbackLoadResult.message

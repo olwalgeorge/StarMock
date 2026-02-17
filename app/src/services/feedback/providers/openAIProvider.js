@@ -395,6 +395,108 @@ async function requestOpenAI({ apiKey, model, prompt }) {
   }
 }
 
+/**
+ * Streaming OpenAI request that yields raw text chunks as they arrive.
+ * Returns an async generator of { chunk, done, fullText, payload, usage, model }.
+ * On the final iteration (done=true) fullText + parsed payload are included.
+ */
+async function* streamRequestOpenAI({ apiKey, model, prompt }) {
+  const controller = new AbortController()
+  const STREAM_TIMEOUT_MS = Number(
+    process.env.OPENAI_STREAM_TIMEOUT_MS || 60000
+  )
+  const timeoutHandle = setTimeout(() => controller.abort(), STREAM_TIMEOUT_MS)
+
+  try {
+    const response = await fetch(`${OPENAI_BASE_URL}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model,
+        temperature: 0.2,
+        stream: true,
+        messages: [
+          {
+            role: 'system',
+            content:
+              'You are an expert interview coach. Always return valid JSON only.',
+          },
+          {
+            role: 'user',
+            content: prompt,
+          },
+        ],
+      }),
+      signal: controller.signal,
+    })
+
+    if (!response.ok) {
+      const errorBody = await response.text()
+      throw new Error(
+        `OpenAI streaming request failed (${response.status}): ${errorBody}`
+      )
+    }
+
+    const reader = response.body.getReader()
+    const decoder = new TextDecoder()
+    let fullText = ''
+    let buffer = ''
+    let resolvedModel = model
+
+    while (true) {
+      const { value, done: readerDone } = await reader.read()
+      if (readerDone) break
+
+      buffer += decoder.decode(value, { stream: true })
+      const lines = buffer.split('\n')
+      // Keep the last potentially-incomplete line in the buffer
+      buffer = lines.pop() || ''
+
+      for (const line of lines) {
+        const trimmed = line.trim()
+        if (!trimmed || !trimmed.startsWith('data:')) continue
+        const jsonStr = trimmed.slice(5).trim()
+        if (jsonStr === '[DONE]') continue
+
+        try {
+          const parsed = JSON.parse(jsonStr)
+          const delta = parsed?.choices?.[0]?.delta?.content
+          if (parsed?.model) resolvedModel = parsed.model
+          if (typeof delta === 'string' && delta.length > 0) {
+            fullText += delta
+            yield { chunk: delta, done: false }
+          }
+        } catch {
+          // Skip malformed SSE lines
+        }
+      }
+    }
+
+    // Final yield with the parsed payload
+    const payload = parseJsonContent(fullText)
+    yield {
+      chunk: '',
+      done: true,
+      fullText,
+      payload,
+      usage: null, // Streaming mode doesn't return usage in chunks
+      model: resolvedModel,
+    }
+  } catch (error) {
+    if (error?.name === 'AbortError') {
+      throw new Error(
+        `OpenAI streaming request timed out after ${process.env.OPENAI_STREAM_TIMEOUT_MS || 60000}ms`
+      )
+    }
+    throw error
+  } finally {
+    clearTimeout(timeoutHandle)
+  }
+}
+
 export const openAIFeedbackProvider = {
   id: PROVIDER_ID,
   evaluate: async ({ responseText, question, airContext }) => {
@@ -421,6 +523,35 @@ export const openAIFeedbackProvider = {
       usage,
       airContext
     )
+  },
+
+  /**
+   * Streaming evaluate — yields { chunk, done, evaluation } objects.
+   * Intermediate yields carry raw text chunks. The final yield (done=true)
+   * includes the fully-parsed and normalized evaluation.
+   */
+  streamEvaluate: async function* ({ responseText, question, airContext }) {
+    const apiKey = process.env.OPENAI_API_KEY
+    if (!apiKey) {
+      throw new Error('OPENAI_API_KEY is not configured')
+    }
+
+    const model = process.env.OPENAI_FEEDBACK_MODEL || DEFAULT_MODEL
+    const prompt = buildPrompt(responseText, question, airContext)
+
+    for await (const event of streamRequestOpenAI({ apiKey, model, prompt })) {
+      if (!event.done) {
+        yield { chunk: event.chunk, done: false }
+      } else {
+        const evaluation = normalizeEvaluation(
+          event.payload,
+          event.model || model,
+          event.usage,
+          airContext
+        )
+        yield { chunk: '', done: true, evaluation }
+      }
+    }
   },
 }
 
